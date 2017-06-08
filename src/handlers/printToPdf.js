@@ -123,6 +123,7 @@ export default (async function printToPdfHandler (event) {
   const endTime = Date.now()
 
   console.log('Successfully rendered pdf', pdf.substring(0, 10));
+  fs.unlinkSync(tmpFile);
   return {
     statusCode: 200,
     body: pdf,
