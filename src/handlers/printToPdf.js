@@ -1,18 +1,19 @@
 import Cdp from 'chrome-remote-interface'
 import config from '../config'
 import { log, sleep } from '../utils'
+import * as fs from 'fs'
 
 const defaultPrintOptions = {
   landscape: false,
   displayHeaderFooter: false,
   printBackground: true,
   scale: 1,
-  paperWidth: 8.27, // aka A4
-  paperHeight: 11.69, // aka A4
-  marginTop: 0,
-  marginBottom: 0,
-  marginLeft: 0,
-  marginRight: 0,
+  paperWidth: 8.5, // aka Letter
+  paperHeight: 11, // aka Letter
+  marginTop: 0.4,
+  marginBottom: 0.4,
+  marginLeft: 0.4,
+  marginRight: 0.4,
   pageRanges: '',
 }
 
@@ -29,6 +30,12 @@ function makePrintOptions (options = {}) {
     }),
     defaultPrintOptions
   )
+}
+
+function getRandomInt(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min)) + min;
 }
 
 export async function printUrlToPdf (url, printOptions = {}) {
@@ -89,40 +96,39 @@ export async function printUrlToPdf (url, printOptions = {}) {
 }
 
 export default (async function printToPdfHandler (event) {
-  const { queryStringParameters: { url, ...printParameters } } = event
-  const printOptions = makePrintOptions(printParameters)
+  console.log('got the request');
+  const printOptions = makePrintOptions({});
   let pdf
-
-  log('Processing PDFification for', url, printOptions)
+  const rnd = getRandomInt(0, 10000);
+  const tmpFile = `/tmp/torender_${rnd}.html`;
+  const url = `file://${tmpFile}`;
+  console.log("About to read file from event");
+  try{
+    const buffer = new Buffer(event.body, 'base64');
+    fs.writeFileSync(tmpFile, buffer);
+    console.log('Processing PDFification for', url, printOptions);
+  } catch(error) {
+    console.log('Error printing pdf for', url, error);
+  }
 
   const startTime = Date.now()
 
   try {
     pdf = await printUrlToPdf(url, printOptions)
   } catch (error) {
-    console.error('Error printing pdf for', url, error)
+    console.log('Error printing pdf for', url, error)
     throw new Error('Unable to print pdf')
   }
 
   const endTime = Date.now()
 
-  // TODO: probably better to write the pdf to S3,
-  // but that's a bit more complicated for this example.
+  console.log('Successfully rendered pdf', pdf.substring(0, 10));
   return {
     statusCode: 200,
-    // it's not possible to send binary via AWS API Gateway as it expects JSON response from Lambda
-    body: `
-      <html>
-        <body>
-          <p><a href="${url}">${url}</a></p>
-          <p><code>${JSON.stringify(printOptions, null, 2)}</code></p>
-          <p>Chromium took ${endTime - startTime} ms to load URL and render PDF.</p>
-          <embed src="data:application/pdf;base64,${pdf}" width="100%" height="100%" type='application/pdf'>
-        </body>
-      </html>
-    `,
+    body: pdf,
     headers: {
-      'Content-Type': 'text/html',
+      'Content-Type': 'application/pdf',
     },
+    isBase64Encoded: true
   }
 })
